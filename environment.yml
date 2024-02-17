@@ -1,0 +1,13 @@
+name: fcpd_mapping
+channels:
+  - conda-forge
+dependencies:
+  - pip
+  - geopandas
+  - pandas
+  - shapely
+  - numpy
+  - folium
+  - ipykernel
+  - pip:
+    - openpolicedata
