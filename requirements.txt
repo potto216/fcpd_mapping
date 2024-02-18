@@ -1,0 +1,8 @@
+folium
+geopandas
+numpy
+openpolicedata
+pandas
+shapely
+streamlit
+streamlit_folium

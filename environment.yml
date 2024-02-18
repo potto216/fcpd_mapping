@@ -1,13 +1,14 @@
-name: fcpd_mapping
+name: fcpd_mapping_dashboard
 channels:
   - conda-forge
 dependencies:
   - pip
+  - folium
   - geopandas
+  - numpy
   - pandas
   - shapely
-  - numpy
-  - folium
-  - ipykernel
+  - streamlit
   - pip:
     - openpolicedata
+    - streamlit_folium
