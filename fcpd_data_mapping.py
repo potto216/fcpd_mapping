@@ -190,11 +190,11 @@ m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
 #     m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
 #                'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
     
-# folium.LayerControl().add_to(m)   
-# st_data = st_folium(m, use_container_width=True)
+folium.LayerControl().add_to(m)   
+st_data = st_folium(m, use_container_width=True)
 
-# st.divider()
-# st.markdown("The dashboard is generated using data from the "+
-#             "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
-#             "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
-#             "and is freely available for others to easily download the raw data.")
+st.divider()
+st.markdown("The dashboard is generated using data from the "+
+            "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
+            "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
+            "and is freely available for others to easily download the raw data.")
