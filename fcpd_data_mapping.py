@@ -153,24 +153,24 @@ with st.sidebar:
                             geo_units,
                             index=[k for k,x in enumerate(geo_units) if x=='Patrol Area'][0])
     
-#     df = get_data(table_type, year)
+    df = get_data(table_type, year)
 
-#     options = get_statute_options(df)
-#     default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
-#     statutes = st.multiselect("Statutes", options, default=default, 
-#                    help='Type in this box to search for statutes')
+    options = get_statute_options(df)
+    default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
+    statutes = st.multiselect("Statutes", options, default=default, 
+                   help='Type in this box to search for statutes')
     
-#     statutes = [x[:x.rfind(" (")] for x in statutes]
+    statutes = [x[:x.rfind(" (")] for x in statutes]
 
-#     df_rem = df[df['Statute Full'].isin(statutes)]
+    df_rem = df[df['Statute Full'].isin(statutes)]
 
-#     races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
-#                            default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
-#                            help='More demographics filters (gender, age) can be added')
+    races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+                           default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+                           help='More demographics filters (gender, age) can be added')
     
-#     df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
+    df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
 
-#     st.text(f"Total Selected: {len(df_rem)}")
+    st.text(f"Total Selected: {len(df_rem)}")
 
 # if map_type=='Individual Locations':
 #     st.header(f"Heat Map of Arrests")
