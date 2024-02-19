@@ -172,9 +172,11 @@ with st.sidebar:
 
     st.text(f"Total Selected: {len(df_rem)}")
 
+m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
+
 # if map_type=='Individual Locations':
 #     st.header(f"Heat Map of Arrests")
-#     m = folium.Map(location=[lat_center, lon_center], zoom_start=10)
+#     m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
 
 #     geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
 #     geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
