@@ -8,9 +8,57 @@ from shapely.geometry import Point
 import streamlit as st
 from streamlit_folium import st_folium
 
+st.set_page_config(layout='wide')
+
 # Fairfax Detoxification Center: 44°56'52.6"N 93°14'41.5"W
 
-st.set_page_config(layout='wide')
+marker_colors = ['Group Color', 'red', 'blue', 'green', 'purple', 'orange', 'darkred', 'lightred', 
+                 'beige', 'darkblue', 'darkgreen', 'cadetblue', 'darkpurple', 'white', 
+                 'pink', 'lightblue', 'lightgreen', 'gray', 'black', 'lightgray']
+default_color = 'blue'
+if 'markers' not in st.session_state:
+    d = {'Name': ['Fairfax Detoxification Center'], 
+         'Latitude': [44+56/60+52.6/3600],
+         'Longitude': [-(93+14/60+41.5/3600)],
+         'Group':['None'],
+         'Color':['Group Color'],
+    }
+    st.session_state['markers'] = pd.DataFrame(d)
+
+    d = {'Name': ['None'], 
+         'Color':[default_color],
+    }
+    st.session_state['marker_groups'] = pd.DataFrame(d)
+
+    df_markers = st.session_state['markers'].copy(deep=true)
+    df_groups = st.session_state['marker_groups'].copy(deep=true)
+else:
+    df_markers = st.session_state['markers_df'].copy(deep=true)
+    df_groups = st.session_state['groups_df'].copy(deep=true)
+
+geo_units = ['Supervisor District','Police District','Patrol Area','Emergency Service Zone', 'Individual Locations']
+geo_data = {
+    'Supervisor District': {
+        'geojson' : 'https://services1.arcgis.com/ioennV6PpG5Xodq0/ArcGIS/rest/services/OpenData_S1/FeatureServer/17/query?outFields=*&where=1%3D1&f=geojson',
+        'bounds_on' : 'DISTRICT',
+        'df_on' : 'DISTRICT_1'
+    },
+    'Police District': {
+        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPoliceStationBoundaries/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+        'bounds_on' : 'STATION_NAME',
+        'df_on' : 'Station Name'
+    },
+    'Patrol Area': {
+        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPolicePatrolAreas/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+        'bounds_on' : 'PATROL_AREA', 
+        'df_on' : 'Patrol Area'
+    },
+    'Emergency Service Zone': {
+        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/Police_ESZ_EmergencyServiceZone/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
+        'bounds_on' : 'cad_esz',  
+        'df_on' : 'ESZ (Emergency Service Zones)'
+    }
+}
 
 def hash_df(df: gpd.GeoDataFrame) -> dict:
     return pd.util.hash_pandas_object(df)
@@ -30,6 +78,10 @@ def get_data(table_type, year):
                                 crs="EPSG:2283").to_crs(epsg=4326)
     
     df['Statute Full'] = df.apply(lambda x: f"{x['Statute']}: {x['Statute Description']}", axis=1)
+
+    cols_keeps = ['Statute Full', 'geometry']
+    cols_keeps.extend([x['df_on'] for x in geo_data.values()])
+    df = df[cols_keeps]
     return df
 
 
@@ -103,7 +155,6 @@ def Choropleth(geojson_link, df, bounds_on, df_on, data_label, tooltip_labels, t
         fill_opacity=opacity,
     ).add_to(m)
 
-    # TODO: Replace NaN logos with 0's
     for row in cp.geojson.data['features']:
         row['properties'][bounds_on] = row['id']
         if (tf:=bounds[bounds_on].apply(str)==row['id']).any():
@@ -118,29 +169,6 @@ def Choropleth(geojson_link, df, bounds_on, df_on, data_label, tooltip_labels, t
     folium.GeoJsonTooltip([bounds_on,data_label],aliases=tooltip_labels).add_to(cp.geojson)
     return m
 
-geo_units = ['Supervisor District','Police District','Patrol Area','Emergency Service Zone', 'Individual Locations']
-geo_data = {
-    'Supervisor District': {
-        'geojson' : 'https://services1.arcgis.com/ioennV6PpG5Xodq0/ArcGIS/rest/services/OpenData_S1/FeatureServer/17/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'DISTRICT',
-        'df_on' : 'DISTRICT_1'
-    },
-    'Police District': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPoliceStationBoundaries/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'STATION_NAME',
-        'df_on' : 'Station Name'
-    },
-    'Patrol Area': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPolicePatrolAreas/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'PATROL_AREA', 
-        'df_on' : 'Patrol Area'
-    },
-    'Emergency Service Zone': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/Police_ESZ_EmergencyServiceZone/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'cad_esz',  
-        'df_on' : 'ESZ (Emergency Service Zones)'
-    }
-}
 
 with st.sidebar:
     table_type = st.selectbox("Data Type", ['ARRESTS'], help='Currently, only arrests 2022 data is available. More data will be available in the future '+
@@ -190,8 +218,36 @@ else:
     m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
                'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
     
-folium.LayerControl().add_to(m)   
+folium.LayerControl().add_to(m)
+
+for k in df_groups.index:
+    members = df_markers[df_markers['Group']==df_groups.loc[k, 'Name']]
+    names = df_markers.loc[members, 'Name']
+    # d = {'Name': ['Fairfax Detoxification Center'], 
+    #      'Latitude': [44+56/60+52.6/3600],
+    #      'Longitude': [-(93+14/60+41.5/3600)],
+    #      'Group':['None'],
+    #      'Color':['Group Color'],
+    # }
+    # st.session_state['markers'] = pd.DataFrame(d)
+
+    # d = {'Name': ['None'], 
+    #      'Color':[default_color],
+    # }
+
 st_data = st_folium(m, use_container_width=True)
+
+marker_config = {
+    'Group': st.column_config.SelectboxColumn(default='None', options=st.session_state['marker_groups']['Name']),
+    'Color': st.column_config.SelectboxColumn(default='Group Color', options=marker_colors)
+}
+group_config = {
+    'Color': st.column_config.SelectboxColumn(default=default, options=marker_colors)
+}
+
+st.session_state['markers_df'] = st.data_editor(st.session_state['markers'], num_rows='dynamic',  column_config=marker_config)
+st.session_state['groups_df'] = st.data_editor(st.session_state['marker_groups'], num_rows='dynamic', column_config=group_config)
+
 
 st.divider()
 st.markdown("The dashboard is generated using data from the "+
