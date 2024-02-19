@@ -173,6 +173,7 @@ with st.sidebar:
     st.text(f"Total Selected: {len(df_rem)}")
 
 if map_type=='Individual Locations':
+    st.header(f"Heat Map of Arrests")
     m = folium.Map(location=[lat_center, lon_center], zoom_start=10)
 
     geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
@@ -182,6 +183,7 @@ if map_type=='Individual Locations':
     plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
     geo_j.add_to(m)
 else:
+    st.header(f"Number of Arrests in Each {map_type}")
     opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
     m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
                'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
