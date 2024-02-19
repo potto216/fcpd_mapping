@@ -153,46 +153,46 @@ with st.sidebar:
                             geo_units,
                             index=[k for k,x in enumerate(geo_units) if x=='Patrol Area'][0])
     
-    df = get_data(table_type, year)
+#     df = get_data(table_type, year)
 
-    options = get_statute_options(df)
-    default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
-    statutes = st.multiselect("Statutes", options, default=default, 
-                   help='Type in this box to search for statutes')
+#     options = get_statute_options(df)
+#     default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
+#     statutes = st.multiselect("Statutes", options, default=default, 
+#                    help='Type in this box to search for statutes')
     
-    statutes = [x[:x.rfind(" (")] for x in statutes]
+#     statutes = [x[:x.rfind(" (")] for x in statutes]
 
-    df_rem = df[df['Statute Full'].isin(statutes)]
+#     df_rem = df[df['Statute Full'].isin(statutes)]
 
-    races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
-                           default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
-                           help='More demographics filters (gender, age) can be added')
+#     races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+#                            default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+#                            help='More demographics filters (gender, age) can be added')
     
-    df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
+#     df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
 
-    st.text(f"Total Selected: {len(df_rem)}")
+#     st.text(f"Total Selected: {len(df_rem)}")
 
-if map_type=='Individual Locations':
-    st.header(f"Heat Map of Arrests")
-    m = folium.Map(location=[lat_center, lon_center], zoom_start=10)
+# if map_type=='Individual Locations':
+#     st.header(f"Heat Map of Arrests")
+#     m = folium.Map(location=[lat_center, lon_center], zoom_start=10)
 
-    geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
-    geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
+#     geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
+#     geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
 
-    points = [[point.xy[1][0], point.xy[0][0]] for point in df_rem.geometry]
-    plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
-    geo_j.add_to(m)
-else:
-    st.header(f"Number of Arrests in Each {map_type}")
-    opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
-    m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
-               'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
+#     points = [[point.xy[1][0], point.xy[0][0]] for point in df_rem.geometry]
+#     plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
+#     geo_j.add_to(m)
+# else:
+#     st.header(f"Number of Arrests in Each {map_type}")
+#     opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
+#     m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
+#                'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
     
-folium.LayerControl().add_to(m)   
-st_data = st_folium(m, use_container_width=True)
+# folium.LayerControl().add_to(m)   
+# st_data = st_folium(m, use_container_width=True)
 
-st.divider()
-st.markdown("The dashboard is generated using data from the "+
-            "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
-            "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
-            "and is freely available for others to easily download the raw data.")
+# st.divider()
+# st.markdown("The dashboard is generated using data from the "+
+#             "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
+#             "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
+#             "and is freely available for others to easily download the raw data.")
