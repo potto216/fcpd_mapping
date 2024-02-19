@@ -174,21 +174,21 @@ with st.sidebar:
 
 m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
 
-# if map_type=='Individual Locations':
-#     st.header(f"Heat Map of Arrests")
-#     m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
+if map_type=='Individual Locations':
+    st.header(f"Heat Map of Arrests")
+    m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
 
-#     geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
-#     geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
+    geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
+    geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
 
-#     points = [[point.xy[1][0], point.xy[0][0]] for point in df_rem.geometry]
-#     plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
-#     geo_j.add_to(m)
-# else:
-#     st.header(f"Number of Arrests in Each {map_type}")
-#     opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
-#     m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
-#                'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
+    points = [[point.xy[1][0], point.xy[0][0]] for point in df_rem.geometry]
+    plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
+    geo_j.add_to(m)
+else:
+    st.header(f"Number of Arrests in Each {map_type}")
+    opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
+    m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
+               'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
     
 folium.LayerControl().add_to(m)   
 st_data = st_folium(m, use_container_width=True)
