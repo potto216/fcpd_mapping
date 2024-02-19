@@ -8,6 +8,8 @@ from shapely.geometry import Point
 import streamlit as st
 from streamlit_folium import st_folium
 
+# Fairfax Detoxification Center: 44°56'52.6"N 93°14'41.5"W
+
 st.set_page_config(layout='wide')
 
 def hash_df(df: gpd.GeoDataFrame) -> dict:
@@ -186,3 +188,9 @@ else:
     
 folium.LayerControl().add_to(m)   
 st_data = st_folium(m, use_container_width=True)
+
+st.divider()
+st.markdown("The dashboard is generated using data from the "+
+            "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
+            "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
+            "and is freely available for others to easily download the raw data.")
