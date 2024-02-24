@@ -1,174 +1,47 @@
+import datetime
 import folium
 from folium import plugins
-import geopandas as gpd
-import numpy as np
+from geopy.geocoders import Nominatim
 import openpolicedata as opd
 import pandas as pd
-from shapely.geometry import Point
+import pyproj
 import streamlit as st
-from streamlit_folium import st_folium
+from streamlit_utils import data_editor_on_change
+from streamlit_folium import folium_static
+
+import cache
+import config
+from mapping import add_overlays
+
+# TODO: Markers: KML, Geocode
 
 st.set_page_config(layout='wide')
 
-# Fairfax Detoxification Center: 44°56'52.6"N 93°14'41.5"W
-
-marker_colors = ['Group Color', 'red', 'blue', 'green', 'purple', 'orange', 'darkred', 'lightred', 
+group_color = 'Group Color'
+marker_colors = ['red', 'blue', 'green', 'purple', 'orange', 'darkred', 'lightred', 
                  'beige', 'darkblue', 'darkgreen', 'cadetblue', 'darkpurple', 'white', 
                  'pink', 'lightblue', 'lightgreen', 'gray', 'black', 'lightgray']
-default_color = 'blue'
-if 'markers' not in st.session_state:
-    d = {'Name': ['Fairfax Detoxification Center'], 
-         'Latitude': [44+56/60+52.6/3600],
-         'Longitude': [-(93+14/60+41.5/3600)],
-         'Group':['None'],
-         'Color':['Group Color'],
-    }
-    st.session_state['markers'] = pd.DataFrame(d)
+marker_colors_w_group = [group_color]
+marker_colors_w_group.extend(marker_colors)
 
-    d = {'Name': ['None'], 
+default_color = 'blue'
+default_group = 'Default Group'
+if 'markers' not in st.session_state:
+    st.session_state['markers'] = pd.DataFrame(columns=['Name','Latitude','Longitude','Group','Color'])
+    # st.session_state['markers_saved'] = st.session_state['markers'].copy()
+
+    d = {'Name': [default_group], 
          'Color':[default_color],
     }
     st.session_state['marker_groups'] = pd.DataFrame(d)
+    # st.session_state['marker_groups_saved'] = st.session_state['marker_groups'].copy()
+    st.session_state['unfreeze_disable'] = True
+    st.session_state['frozen_filters'] = None
 
-    df_markers = st.session_state['markers'].copy(deep=true)
-    df_groups = st.session_state['marker_groups'].copy(deep=true)
-else:
-    df_markers = st.session_state['markers_df'].copy(deep=true)
-    df_groups = st.session_state['groups_df'].copy(deep=true)
-
-geo_units = ['Supervisor District','Police District','Patrol Area','Emergency Service Zone', 'Individual Locations']
-geo_data = {
-    'Supervisor District': {
-        'geojson' : 'https://services1.arcgis.com/ioennV6PpG5Xodq0/ArcGIS/rest/services/OpenData_S1/FeatureServer/17/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'DISTRICT',
-        'df_on' : 'DISTRICT_1'
-    },
-    'Police District': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPoliceStationBoundaries/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'STATION_NAME',
-        'df_on' : 'Station Name'
-    },
-    'Patrol Area': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/FairfaxPolicePatrolAreas/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'PATROL_AREA', 
-        'df_on' : 'Patrol Area'
-    },
-    'Emergency Service Zone': {
-        'geojson' : 'https://services9.arcgis.com/kYvfX7YK8OobHItA/ArcGIS/rest/services/Police_ESZ_EmergencyServiceZone/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson',
-        'bounds_on' : 'cad_esz',  
-        'df_on' : 'ESZ (Emergency Service Zones)'
-    }
-}
-
-def hash_df(df: gpd.GeoDataFrame) -> dict:
-    return pd.util.hash_pandas_object(df)
-
-@st.cache_data(show_spinner="Fetching data")
-def get_data(table_type, year):
-    data = opd.Source(source_name="Fairfax County")
-    table = data.load(year=year, table_type=table_type)
-    table.standardize()
-    df = table.table
-    df['Patrol Area'] = df['Patrol Area'].apply(lambda x: int(x) if pd.notnull(x) and isinstance(x,str) and x.isdigit() else x)
-
-    df = gpd.GeoDataFrame(df)
-    # This reference https://law.lis.virginia.gov/vacodefull/title1/chapter6/ describes the Virginia State Plane North (NAD83) projection
-    # The Virginia State Plane is referenced as EPSG:2283 NAD83 / Virginia North (ftUS) in https://epsg.io/2283
-    df = df.set_geometry(df.apply(lambda x: Point(x['X Coordinate'], x['Y Coordinate']), axis=1),
-                                crs="EPSG:2283").to_crs(epsg=4326)
-    
-    df['Statute Full'] = df.apply(lambda x: f"{x['Statute']}: {x['Statute Description']}", axis=1)
-
-    cols_keeps = ['Statute Full', 'geometry']
-    cols_keeps.extend([x['df_on'] for x in geo_data.values()])
-    df = df[cols_keeps]
-    return df
-
-
-@st.cache_data(show_spinner="Loading County Boundary")
-def get_county_bounds():
-    geojson_link = 'https://services1.arcgis.com/ioennV6PpG5Xodq0/arcgis/rest/services/Fairfax_County_Boundary/FeatureServer/0/query?outFields=*&where=1%3D1&f=geojson'
-    fairfax_county_boundary = gpd.read_file(geojson_link)
-    return fairfax_county_boundary.to_crs(epsg=4326)
-
-county_bounds = get_county_bounds()
+county_bounds = cache.get_county_bounds()
 bounds = county_bounds.total_bounds
 lon_center = (bounds[0] + bounds[2]) / 2
 lat_center = (bounds[1] + bounds[3]) / 2
-
-@st.cache_data(show_spinner=False, hash_funcs={gpd.GeoDataFrame: hash_df})
-def get_statute_options(df):
-    vc = df['Statute Full'].value_counts().to_frame().reset_index()
-    return vc.apply(lambda x: f"{x['Statute Full']} ({x['count']})", axis=1)
-
-
-@st.cache_data(show_spinner="Loading boundaries")
-def load_geojson(geojson_link):
-    bounds = gpd.read_file(geojson_link)
-    return bounds.to_crs(epsg=4326)
-
-def Choropleth(geojson_link, df, bounds_on, df_on, data_label, tooltip_labels, test=None, skip_test=True, max_val=None, exclude=[], opacity=0.6):
-    bounds = load_geojson(geojson_link)
-    
-    if len(exclude)>0:
-        bounds = bounds[~bounds[bounds_on].isin(exclude)]
-
-    if not skip_test:
-        districts = bounds[bounds_on].unique()
-        districts_arrests = df[df_on].unique()
-
-        for d in districts_arrests:
-            if d not in ['UNVERIFIED',-1, 0] and d not in districts and (not test or test(d)):
-                raise ValueError(f"Unknown value: {d}")
-        
-    
-    vc = df[df_on].astype(float).value_counts()
-    vc.name = data_label
-
-    bounds = bounds.drop_duplicates(subset=bounds_on)
-
-    bounds = bounds.merge(vc, how='left', left_on=bounds_on, right_on=df_on)
-
-    m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
-
-    geo = gpd.GeoSeries(bounds.set_index(bounds_on)['geometry']).to_json()
-
-    num_bins = 10
-    if not max_val:
-        max_val = bounds[data_label].max()
-        bins = np.linspace(0, max_val, num_bins)
-    else:
-        bins = np.append(np.linspace(0, max_val, num_bins-1), bounds[data_label].max())
-
-
-    # https://towardsdatascience.com/how-to-step-up-your-folium-choropleth-map-skills-17cf6de7c6fe
-    cp = folium.Choropleth(
-        geo_data=geo,
-        data=bounds,
-        columns=[bounds_on, data_label],
-        key_on = 'feature.id',
-        legend_name = '# of Arrests',
-        nan_fill_color='White',
-        highlight=True,
-        bins=bins,
-        name="Data Plot",
-        fill_opacity=opacity,
-    ).add_to(m)
-
-    for row in cp.geojson.data['features']:
-        row['properties'][bounds_on] = row['id']
-        if (tf:=bounds[bounds_on].apply(str)==row['id']).any():
-            val = bounds[data_label][tf].iloc[0]
-            if pd.notnull(val):
-                row['properties'][data_label] = str(int(val))
-            else:
-                row['properties'][data_label] = '0'
-        else:
-            row['properties'][data_label] = '0'
-        
-    folium.GeoJsonTooltip([bounds_on,data_label],aliases=tooltip_labels).add_to(cp.geojson)
-    return m
-
 
 with st.sidebar:
     table_type = st.selectbox("Data Type", ['ARRESTS'], help='Currently, only arrests 2022 data is available. More data will be available in the future '+
@@ -178,19 +51,19 @@ with st.sidebar:
                               'Please notify if there is an immediate need for more data')
     
     map_type = st.selectbox('Geographic Unit (Most General to Most Specific)',
-                            geo_units,
-                            index=[k for k,x in enumerate(geo_units) if x=='Patrol Area'][0])
+                            config.geo_data.keys(),
+                            index=[k for k,x in enumerate(config.geo_data.keys()) if x=='Patrol Area'][0])
     
-    df = get_data(table_type, year)
+    df = cache.get_data(table_type, year)
 
-    options = get_statute_options(df)
+    options = cache.get_statute_options(df)
     default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
     statutes = st.multiselect("Statutes", options, default=default, 
                    help='Type in this box to search for statutes')
     
-    statutes = [x[:x.rfind(" (")] for x in statutes]
+    statutes_list = [x[:x.rfind(" (")] for x in statutes]
 
-    df_rem = df[df['Statute Full'].isin(statutes)]
+    df_rem = df[df['Statute Full'].isin(statutes_list)]
 
     races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
                            default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
@@ -200,57 +73,141 @@ with st.sidebar:
 
     st.text(f"Total Selected: {len(df_rem)}")
 
-m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
+st.info("Hover over question marks and buttons for helpful hints on using this dashboard. Add markers and adjust settings below map.")
 
-if map_type=='Individual Locations':
-    st.header(f"Heat Map of Arrests")
-    m = folium.Map(location=[lat_center, lon_center], zoom_start=10, min_zoom=10)
+st.header(f"Heat Map of Arrests" if map_type=='Individual Locations' else f"Number of Arrests in Each {map_type}")
+col1, col2, col3 = st.columns(3)
+with col1:
+    def freeze_click():
+        st.session_state['unfreeze_disable'] = False
+        st.session_state['frozen_filters'] = {'map_type': map_type, 
+                                            'statutes': statutes, 
+                                            'races': races,
+                                            'df_rem': df_rem.copy()}
+    st.button('Freeze', on_click=freeze_click, help="Click this button to keep the current map and compare to a 2nd map.")
 
-    geo_j = gpd.GeoSeries(county_bounds.iloc[0]['geometry']).to_json()
-    geo_j = folium.GeoJson(data=geo_j, style_function=lambda x: {"fillOpacity": 0.0}, name='County Boundary')
+plot_dual = st.session_state['frozen_filters']!=None
+if plot_dual:
+    with col2:
+        def unfreeze_click():
+            st.session_state['unfreeze_disable'] = True
+            st.session_state['frozen_filters'] = None
+        st.button('Unfreeze', disabled=st.session_state['unfreeze_disable'], on_click=unfreeze_click,
+                help="Click this button to return to a single map.")
+        
+with col3:
+    download_container = st.container()
 
-    points = [[point.xy[1][0], point.xy[0][0]] for point in df_rem.geometry]
-    plugins.HeatMap(points, radius = 4, blur = 1, name="Data Plot").add_to(m)
-    geo_j.add_to(m)
-else:
-    st.header(f"Number of Arrests in Each {map_type}")
-    opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05)
-    m = Choropleth(geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
-               'ARRESTS', [f'{map_type}:','# of Arrests:'], opacity=opacity)
-    
-folium.LayerControl().add_to(m)
+map = plugins.DualMap if plot_dual else folium.Map
 
-for k in df_groups.index:
-    members = df_markers[df_markers['Group']==df_groups.loc[k, 'Name']]
-    names = df_markers.loc[members, 'Name']
-    # d = {'Name': ['Fairfax Detoxification Center'], 
-    #      'Latitude': [44+56/60+52.6/3600],
-    #      'Longitude': [-(93+14/60+41.5/3600)],
-    #      'Group':['None'],
-    #      'Color':['Group Color'],
-    # }
-    # st.session_state['markers'] = pd.DataFrame(d)
+zoom_start = 10 if plot_dual else 10
+map_container = map(location=[lat_center, lon_center], zoom_start=zoom_start, min_zoom=zoom_start)
 
-    # d = {'Name': ['None'], 
-    #      'Color':[default_color],
-    # }
+m = map_container.m2 if plot_dual else map_container
 
-st_data = st_folium(m, use_container_width=True)
+container = st.container(border=False)
+
+opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05) if map_type!='Individual Locations' else None
+add_overlays(map_type, county_bounds, df_rem, m, config.geo_data, opacity, legend=not plot_dual)
+if plot_dual:
+    opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05) \
+        if st.session_state['frozen_filters']['map_type']!='Individual Locations' and not opacity else opacity
+    add_overlays(st.session_state['frozen_filters']['map_type'], county_bounds, 
+                 st.session_state['frozen_filters']['df_rem'], map_container.m1, config.geo_data, opacity, legend=False)
+
+with container:
+    if plot_dual:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info("Left map is filtered for: \n\n"+
+                    f"**Statutes**: {', '.join(st.session_state['frozen_filters']['statutes'])}\n\n"+
+                    f"**Races**: {', '.join(st.session_state['frozen_filters']['races'])}\n\n")
+        with col2:
+            st.info("Left map is filtered for the current filter selections")
+    width = 1000 if plot_dual else 700
+    folium_static(map_container, width=width)#, use_container_width=True)
+
+download_container.download_button(
+    label='Download Map',
+    data = cache.map_to_html(str(plot_dual), map_type, statutes, races, map_container),
+    file_name="map_"+datetime.datetime.now().strftime('%Y%m%d_%H%M%S'+".html"),
+    help="Download current map as HTML file"
+)
 
 marker_config = {
-    'Group': st.column_config.SelectboxColumn(default='None', options=st.session_state['marker_groups']['Name']),
-    'Color': st.column_config.SelectboxColumn(default='Group Color', options=marker_colors)
+    'Latitude' : st.column_config.NumberColumn(format="%.5f"),
+    'Longitude' : st.column_config.NumberColumn(format="%.5f"),
+    'Group': st.column_config.SelectboxColumn(default='Default Group', 
+                                              options=st.session_state['marker_groups']['Name'].replace("",pd.NA).dropna(), required=True),
+    'Color': st.column_config.SelectboxColumn(default=group_color, options=marker_colors, required=True)
 }
 group_config = {
-    'Color': st.column_config.SelectboxColumn(default=default, options=marker_colors)
+    'Color': st.column_config.SelectboxColumn(default=default_color, options=marker_colors, required=True)
 }
 
-st.session_state['markers_df'] = st.data_editor(st.session_state['markers'], num_rows='dynamic',  column_config=marker_config)
-st.session_state['groups_df'] = st.data_editor(st.session_state['marker_groups'], num_rows='dynamic', column_config=group_config)
+with st.expander("Add Markers to Map", expanded=True):
+    default_address = 'Type address to find Lat/Long for new marker and click Enter'
+    def address_on_change():
+        st.session_state['address_entered'] = True
+        if len(st.session_state.address.strip())>0 and st.session_state.address!=default_address:
+            geolocator = Nominatim(user_agent="FCPD Mapping Dashboard")
+            try:
+                location = geolocator.geocode(st.session_state.address)
+                # Check that found location is suitably close
+                transformer = pyproj.Transformer.from_crs("EPSG:4326", config.crs)
+                x0,y0 = transformer.transform(lat_center, lon_center)
+                x1,y1 = transformer.transform(location.latitude, location.longitude)
+                units = pyproj.CRS.from_epsg(2283).coordinate_system.axis_list[0].unit_name
+
+                if units!='US survey foot':
+                    raise ValueError("Currently, only units of feet can be tested. Notify dashboard ")
+                
+                dist = ((x1-x0)**2 + (y1-y0)**2)**0.5 / 5280
+                if dist>100:
+                    # This is really far away and unlikely to have been user's desired marker location
+                    st.toast(f"Latitude/Longitude found is {round(dist)} miles from center of map and is unlikely to be desired location. "+
+                             "Marker not added.")
+                    
+                st.session_state['markers'] = pd.concat([st.session_state['markers'], 
+                                pd.DataFrame([('',location.latitude, location.longitude,default_group,group_color)], 
+                                             columns=st.session_state['markers'].columns)],
+                                ignore_index=True)
+            except:
+                st.toast(f"Latitude/Longitude not found for {st.session_state.address}")
+
+    st.text_input(label='Address for New Marker',
+                  key='address',
+                  placeholder=default_address,
+                  on_change=address_on_change,
+                  help="Type address and click Enter to find Latitude and Longitude for a location. "+
+                        "Latitude/Longitude will be added to Markers table and displayed on map.")
+
+    st.subheader("Markers",
+                 help="List of markers. To delete a marker, click on the empty column on the left and then click the track can icon "+
+                    "above the table on the right.")
+    st.data_editor(st.session_state['markers'], 
+                    num_rows='dynamic',  
+                    key='df_markers',
+                    on_change=lambda: data_editor_on_change('df_markers', 'markers'),
+                    column_config=marker_config,
+                    hide_index=True)
+
+    st.subheader("Marker Groups",
+                  help="Marker groups allow multiple markers to be in the same layer in the map so they can can be hidden "+
+                        "and unhidden together in the layer controls (white box with the stacked squares in the upper right of the map). "+
+                        "To delete a group, click on the empty column on the left and then click the track can icon "+
+                        "above the table on the right.")
+    st.data_editor(st.session_state['marker_groups'], 
+                    key='df_marker_groups',
+                    on_change=lambda: data_editor_on_change('df_marker_groups', 'marker_groups'),
+                    num_rows='dynamic', 
+                    column_config=group_config,
+                    hide_index=True)
 
 
 st.divider()
 st.markdown("The dashboard is generated using data from the "+
             "[Fairfax County Police Open Data Portal](https://www.fcpod.org/pages/crime-data). "+
             "[OpenPoliceData](https://openpolicedata.readthedocs.io/) was used to load data into this dashboard " +
-            "and is freely available for others to easily download the raw data.")
+            "and is freely available for others to easily download the raw data.\n\n"+
+            'Report issues, feature requests, or suggestions to openpolicedata@gmail.com or our [GitHub issues page](https://github.com/sowdm/fcpd_mapping/issues).')

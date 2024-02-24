@@ -1,8 +1,10 @@
 folium
 geopandas
+geopy
 numpy
 openpolicedata
 pandas
+pyproj
 shapely
 streamlit
 streamlit_folium
