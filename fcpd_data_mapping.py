@@ -14,8 +14,6 @@ import cache
 import config
 from mapping import add_overlays, add_markers
 
-# TODO: Markers: KML, Geocode
-
 st.set_page_config(layout='wide')
 
 group_color = 'Group Color'
@@ -27,6 +25,9 @@ marker_colors_w_group.extend(marker_colors)
 
 default_color = 'blue'
 default_group = 'Default Group'
+default_statutes = ['5/1/2001: DRUNK IN PUBLIC OR PROFANE']
+default_map_type = 'Patrol Area'
+default_races = None
 if 'markers' not in st.session_state:
     st.session_state['markers'] = pd.DataFrame(columns=['Name','Latitude','Longitude','Group','Color'])
     # st.session_state['markers_saved'] = st.session_state['markers'].copy()
@@ -37,12 +38,31 @@ if 'markers' not in st.session_state:
     st.session_state['marker_groups'] = pd.DataFrame(d)
     # st.session_state['marker_groups_saved'] = st.session_state['marker_groups'].copy()
     st.session_state['unfreeze_disable'] = True
-    st.session_state['frozen_filters'] = None
+
+    print('QUERY: ')
+    print(st.query_params.to_dict())
+    if 'map_type' in st.query_params.keys():
+        default_map_type = st.query_params['map_type']
+    if 'statutes' in st.query_params.keys():
+        default_statutes = st.query_params.get_all('statutes')
+    if 'races' in st.query_params.keys():
+        default_races = st.query_params.get_all('races')
+
+    if all([k in st.query_params.keys() for k in ['frozen_map_type', 'frozen_statutes', 'frozen_races']]):
+         st.session_state['frozen_filters'] = {}
+         st.session_state['frozen_filters']['map_type'] = st.query_params['frozen_map_type']
+         st.session_state['frozen_filters']['statutes'] = st.query_params.get_all('frozen_statutes')
+         st.session_state['frozen_filters']['races'] = st.query_params.get_all('frozen_races')
+    else:
+        st.session_state['frozen_filters'] = None
 
 county_bounds = cache.get_county_bounds()
 bounds = county_bounds.total_bounds
 lon_center = (bounds[0] + bounds[2]) / 2
 lat_center = (bounds[1] + bounds[3]) / 2
+
+def strip_statute_count(statutes):
+    return [x[:x.rfind(" (")] for x in statutes]
 
 with st.sidebar:
     table_type = st.selectbox("Data Type", ['ARRESTS'], help='Currently, only arrests 2022 data is available. More data will be available in the future '+
@@ -53,21 +73,26 @@ with st.sidebar:
     
     map_type = st.selectbox('Geographic Unit (Most General to Most Specific)',
                             config.geo_data.keys(),
-                            index=[k for k,x in enumerate(config.geo_data.keys()) if x=='Patrol Area'][0])
+                            index=[k for k,x in enumerate(config.geo_data.keys()) if x==default_map_type][0])
     
     df = cache.get_data(table_type, year)
 
-    options = cache.get_statute_options(df)
-    default = [x for x in options if x.startswith('5/1/2001: DRUNK IN PUBLIC OR PROFANE')]
-    statutes = st.multiselect("Statutes", options, default=default, 
+    statute_options = cache.get_statute_options(df)
+    default = []
+    for x in default_statutes:
+        matches = [y for y in statute_options if y.startswith(x+' (')]
+        default.extend(matches)
+        
+    statutes = st.multiselect("Statutes", statute_options, default=default, 
                    help='Type in this box to search for statutes')
     
-    statutes_list = [x[:x.rfind(" (")] for x in statutes]
+    statutes_list = strip_statute_count(statutes)
 
     df_rem = df[df['Statute Full'].isin(statutes_list)]
 
-    races = st.multiselect("Race/Ethnicity", df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
-                           default=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+
+    races = st.multiselect("Race/Ethnicity", unique_races:=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+                           default=default_races if default_races else unique_races,
                            help='More demographics filters (gender, age) can be added')
     
     df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
@@ -77,7 +102,7 @@ with st.sidebar:
 st.info("Hover over question marks and buttons for helpful hints on using this dashboard. Add markers and adjust settings below map.")
 
 st.header(f"Heat Map of Arrests" if map_type=='Individual Locations' else f"Number of Arrests in Each {map_type}")
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     def freeze_click():
         st.session_state['unfreeze_disable'] = False
@@ -99,6 +124,23 @@ with col2:
 with col3:
     download_container = st.container()
 
+with col4:
+    if st.button(label="Create URL", 
+                help="Generate URL for the current filters and freeze state that can be used to return to the current map state. "+
+                    "\n\nURL will appear in the browser URL bar."
+                    "\n\nNote: Markers are not saved. Click Export Markers button below to save markers."):
+        
+        st.query_params.clear()
+        st.query_params['map_type'] = map_type
+        st.query_params['statutes'] = statutes_list
+        st.query_params['races'] = races
+
+        if plot_dual:
+            st.query_params['frozen_map_type'] = st.session_state['frozen_filters']['map_type']
+            st.query_params['frozen_statutes'] = strip_statute_count(st.session_state['frozen_filters']['statutes'])
+            st.query_params['frozen_races'] = st.session_state['frozen_filters']['races']
+
+
 map = plugins.DualMap if plot_dual else folium.Map
 
 zoom_start = 10 if plot_dual else 10
@@ -113,15 +155,21 @@ add_overlays(map_type, county_bounds, df_rem, m, config.geo_data, opacity, legen
 if plot_dual:
     opacity = st.slider('Opacity', 0.0, 1.0, 0.6, step=0.05) \
         if st.session_state['frozen_filters']['map_type']!='Individual Locations' and not opacity else opacity
+    if 'df_rem' not in st.session_state['frozen_filters']:
+        # frozen_filters was populated from command line
+        frozen_statutes = st.session_state['frozen_filters']['statutes']
+        st.session_state['frozen_filters']['statutes'] = []
+        for k, v in enumerate(frozen_statutes):          
+            v = [x for x in statute_options if x.startswith(v+' (')][0]
+            st.session_state['frozen_filters']['statutes'].append(v)
+            
+        st.session_state['frozen_filters']['df_rem'] = df[df['Statute Full'].isin(frozen_statutes)]
+        st.session_state['frozen_filters']['df_rem'] = st.session_state['frozen_filters']['df_rem'][
+            st.session_state['frozen_filters']['df_rem'][opd.defs.columns.RE_GROUP_SUBJECT].isin(st.session_state['frozen_filters']['races'])
+        ]
+
     add_overlays(st.session_state['frozen_filters']['map_type'], county_bounds, 
                  st.session_state['frozen_filters']['df_rem'], map_container.m1, config.geo_data, opacity, legend=False)
-
-download_container.download_button(
-    label='Download Map',
-    data = cache.map_to_html(str(plot_dual), map_type, statutes, races, map_container),
-    file_name="map_"+datetime.datetime.now().strftime('%Y%m%d_%H%M%S'+".html"),
-    help="Download current map as HTML file"
-)
 
 marker_config = {
     'Latitude' : st.column_config.NumberColumn(format="%.5f"),
@@ -261,6 +309,12 @@ with container:
     width = 1000 if plot_dual else 700
     folium_static(map_container, width=width)
 
+download_container.download_button(
+    label='Download Map',
+    data = cache.map_to_html(str(plot_dual), map_type, statutes, races, map_container),
+    file_name="map_"+datetime.datetime.now().strftime('%Y%m%d_%H%M%S'+".html"),
+    help="Download current map as HTML file"
+)
 
 st.divider()
 st.markdown("The dashboard is generated using data from the "+
