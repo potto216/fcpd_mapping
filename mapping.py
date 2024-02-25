@@ -23,13 +23,11 @@ def Choropleth(m, geojson_link, df, bounds_on, df_on, data_label, tooltip_labels
                 raise ValueError(f"Unknown value: {d}")
         
     
-    if df[df_on].apply(lambda x: isinstance(x,str) and not x.isdigit()).all():
-        vc = df[df_on].value_counts()
-    else:
-        vc = df[df_on].astype(float).value_counts()
+    vc = df[df_on].astype(str).value_counts()
     vc.name = data_label
 
     bounds = bounds.drop_duplicates(subset=bounds_on)
+    bounds[bounds_on] = bounds[bounds_on].astype(str)
 
     bounds = bounds.merge(vc, how='left', left_on=bounds_on, right_on=df_on)
 
