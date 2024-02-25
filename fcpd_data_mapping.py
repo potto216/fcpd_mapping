@@ -2,6 +2,7 @@ import datetime
 import folium
 from folium import plugins
 from geopy.geocoders import Nominatim
+import json
 import openpolicedata as opd
 import pandas as pd
 import pyproj
@@ -11,7 +12,7 @@ from streamlit_folium import folium_static
 
 import cache
 import config
-from mapping import add_overlays
+from mapping import add_overlays, add_markers
 
 # TODO: Markers: KML, Geocode
 
@@ -87,13 +88,13 @@ with col1:
     st.button('Freeze', on_click=freeze_click, help="Click this button to keep the current map and compare to a 2nd map.")
 
 plot_dual = st.session_state['frozen_filters']!=None
-if plot_dual:
-    with col2:
-        def unfreeze_click():
-            st.session_state['unfreeze_disable'] = True
-            st.session_state['frozen_filters'] = None
-        st.button('Unfreeze', disabled=st.session_state['unfreeze_disable'], on_click=unfreeze_click,
-                help="Click this button to return to a single map.")
+
+with col2:
+    def unfreeze_click():
+        st.session_state['unfreeze_disable'] = True
+        st.session_state['frozen_filters'] = None
+    st.button('Unfreeze', disabled=st.session_state['unfreeze_disable'], on_click=unfreeze_click,
+            help="Click this button to return to a single map.")
         
 with col3:
     download_container = st.container()
@@ -114,18 +115,6 @@ if plot_dual:
         if st.session_state['frozen_filters']['map_type']!='Individual Locations' and not opacity else opacity
     add_overlays(st.session_state['frozen_filters']['map_type'], county_bounds, 
                  st.session_state['frozen_filters']['df_rem'], map_container.m1, config.geo_data, opacity, legend=False)
-
-with container:
-    if plot_dual:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.info("Left map is filtered for: \n\n"+
-                    f"**Statutes**: {', '.join(st.session_state['frozen_filters']['statutes'])}\n\n"+
-                    f"**Races**: {', '.join(st.session_state['frozen_filters']['races'])}\n\n")
-        with col2:
-            st.info("Left map is filtered for the current filter selections")
-    width = 1000 if plot_dual else 700
-    folium_static(map_container, width=width)#, use_container_width=True)
 
 download_container.download_button(
     label='Download Map',
@@ -181,28 +170,96 @@ with st.expander("Add Markers to Map", expanded=True):
                   on_change=address_on_change,
                   help="Type address and click Enter to find Latitude and Longitude for a location. "+
                         "Latitude/Longitude will be added to Markers table and displayed on map.")
+    
+    marker_container = st.container()
 
-    st.subheader("Markers",
-                 help="List of markers. To delete a marker, click on the empty column on the left and then click the track can icon "+
-                    "above the table on the right.")
-    st.data_editor(st.session_state['markers'], 
-                    num_rows='dynamic',  
-                    key='df_markers',
-                    on_change=lambda: data_editor_on_change('df_markers', 'markers'),
-                    column_config=marker_config,
-                    hide_index=True)
+    with st.form("my-form", clear_on_submit=True):
+        uploaded_files = st.file_uploader("Choose .json file(s) containing markers and marker groups to import", 
+                                          type=['json'],
+                                          accept_multiple_files=True,
+                                          help='Import markers from .json files. Click Add Markers button after uploading files to add.')
 
-    st.subheader("Marker Groups",
-                  help="Marker groups allow multiple markers to be in the same layer in the map so they can can be hidden "+
-                        "and unhidden together in the layer controls (white box with the stacked squares in the upper right of the map). "+
-                        "To delete a group, click on the empty column on the left and then click the track can icon "+
+        if st.form_submit_button("Add Markers"):
+            for uploaded_file in uploaded_files:
+                loaded = False
+                try:
+                    data = json.load(uploaded_file)
+                    loaded = True
+                except:
+                    st.toast(f"Unable to load {uploaded_file.name}")
+                
+                if loaded:
+                    # Validate file
+                    if val:=(len(data.keys())==2 and 'markers' in data.keys() and 'marker_groups' in data.keys()):
+                        # Validate
+                        for k,v in data.items():
+                            val &= all([[x in st.session_state[k].columns for x in v.keys()]])
+                    if val:
+                        for k,v in data.items():
+                            try:
+                                st.session_state[k] = pd.concat([st.session_state[k], pd.DataFrame(v)], ignore_index=True).drop_duplicates()
+                            except:
+                                st.toast(f"Unable to load {k} from {uploaded_file.name}")
+                    else:
+                        st.toast(f"{uploaded_file.name} does not contain markers and marker groups in the expected format")
+
+
+    with marker_container:
+        st.subheader("Markers",
+                    help="List of markers. To delete a marker, click on the empty column on the left and then click the track can icon "+
                         "above the table on the right.")
-    st.data_editor(st.session_state['marker_groups'], 
-                    key='df_marker_groups',
-                    on_change=lambda: data_editor_on_change('df_marker_groups', 'marker_groups'),
-                    num_rows='dynamic', 
-                    column_config=group_config,
-                    hide_index=True)
+        st.data_editor(st.session_state['markers'], 
+                        num_rows='dynamic',  
+                        key='df_markers',
+                        on_change=lambda: data_editor_on_change('df_markers', 'markers'),
+                        column_config=marker_config,
+                        hide_index=True)
+
+        st.subheader("Marker Groups",
+                    help="Marker groups allow multiple markers to be in the same layer in the map so they can can be hidden "+
+                            "and unhidden together in the layer controls (white box with the stacked squares in the upper right of the map). "+
+                            "To delete a group, click on the empty column on the left and then click the track can icon "+
+                            "above the table on the right.")
+        st.data_editor(st.session_state['marker_groups'], 
+                        key='df_marker_groups',
+                        on_change=lambda: data_editor_on_change('df_marker_groups', 'marker_groups'),
+                        num_rows='dynamic', 
+                        column_config=group_config,
+                        hide_index=True)
+    
+
+    data_export = json.dumps({
+        'markers':st.session_state['markers'].to_dict(),
+        'marker_groups':st.session_state['marker_groups'].to_dict(),
+    }, indent=4)
+    
+    st.download_button(
+        label='Export Markers',
+        data = data_export,
+        file_name="markers_"+datetime.datetime.now().strftime('%Y%m%d_%H%M%S'+".json"),
+        help="Download markers and marker groups so that they can be reused (imported) into a future session."
+    )
+
+if plot_dual:
+    add_markers(map_container.m1)
+    add_markers(map_container.m2)
+    folium.LayerControl().add_to(map_container.m1)
+    folium.LayerControl().add_to(map_container.m2)
+else:
+    add_markers(map_container)
+    folium.LayerControl().add_to(map_container)
+
+with container:
+    if plot_dual:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info("Left map is filtered for: \n\n"+
+                    f"**Statutes**: {', '.join(st.session_state['frozen_filters']['statutes'])}\n\n"+
+                    f"**Races**: {', '.join(st.session_state['frozen_filters']['races'])}\n\n")
+        with col2:
+            st.info("Left map is filtered for the current filter selections")
+    width = 1000 if plot_dual else 700
+    folium_static(map_container, width=width)
 
 
 st.divider()
