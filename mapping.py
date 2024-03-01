@@ -85,24 +85,7 @@ def add_overlays(map_type, county_bounds, df_rem, m, geo_data, opacity, legend=T
     else:
         Choropleth(m, geo_data[map_type]['geojson'], df_rem, geo_data[map_type]['bounds_on'], geo_data[map_type]['df_on'], 
                 'ARRESTS', [f'{map_type}:','# of Arrests: '], opacity=opacity, legend=legend)
-        
-    # df_markers = st.session_state['markers'].replace('',pd.NA).dropna(subset=['Latitude','Longitude'])
-    # for k in st.session_state['marker_groups'].index:
-    #     members = df_markers['Group']==st.session_state['marker_groups'].loc[k, 'Name']
-    #     if members.any():
-    #         fg=folium.FeatureGroup(name=st.session_state['marker_groups'].loc[k, 'Name'], show=True)
-    #         m.add_child(fg)
-    #         for j in members[members].index:
-    #             color = st.session_state['marker_groups'].loc[k, 'Color'] if (c:=df_markers.loc[j, 'Color'])=='Group Color' else c
-    #             name = df_markers.loc[j, 'Name'] if pd.notnull(df_markers.loc[j, 'Name']) else None
-    #             folium.Marker([df_markers.loc[j, 'Latitude'], df_markers.loc[j, 'Longitude']], 
-    #                             tooltip=name,
-    #                             popup=name,
-    #                             icon=folium.Icon(color=color, icon=None)
-    #                             ).add_to(fg)
-                
 
-    # folium.LayerControl().add_to(m)
 
 def add_markers(m):
     df_markers = st.session_state['markers'].replace('',pd.NA).dropna(subset=['Latitude','Longitude'])

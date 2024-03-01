@@ -14,6 +14,8 @@ import cache
 import config
 from mapping import add_overlays, add_markers
 
+# TODO: Add max val in colorbar
+
 st.set_page_config(layout='wide')
 
 group_color = 'Group Color'
@@ -25,7 +27,8 @@ marker_colors_w_group.extend(marker_colors)
 
 default_color = 'blue'
 default_group = 'Default Group'
-default_statutes = ['5/1/2001: DRUNK IN PUBLIC OR PROFANE']
+default_statutes = ['ALL']  #['5/1/2001: DRUNK IN PUBLIC OR PROFANE']
+default_ibrs = ['ALL']
 default_map_type = 'Patrol Area'
 default_races = None
 if 'markers' not in st.session_state:
@@ -39,18 +42,19 @@ if 'markers' not in st.session_state:
     # st.session_state['marker_groups_saved'] = st.session_state['marker_groups'].copy()
     st.session_state['unfreeze_disable'] = True
 
-    print('QUERY: ')
-    print(st.query_params.to_dict())
     if 'map_type' in st.query_params.keys():
         default_map_type = st.query_params['map_type']
+    if 'ibrs' in st.query_params.keys():
+        default_ibrs = st.query_params.get_all('ibrs')
     if 'statutes' in st.query_params.keys():
         default_statutes = st.query_params.get_all('statutes')
     if 'races' in st.query_params.keys():
         default_races = st.query_params.get_all('races')
 
-    if all([k in st.query_params.keys() for k in ['frozen_map_type', 'frozen_statutes', 'frozen_races']]):
+    if all([k in st.query_params.keys() for k in ['frozen_map_type', 'frozen_ibrs', 'frozen_statutes', 'frozen_races']]):
          st.session_state['frozen_filters'] = {}
          st.session_state['frozen_filters']['map_type'] = st.query_params['frozen_map_type']
+         st.session_state['frozen_filters']['ibrs'] = st.query_params.get_all('frozen_ibrs')
          st.session_state['frozen_filters']['statutes'] = st.query_params.get_all('frozen_statutes')
          st.session_state['frozen_filters']['races'] = st.query_params.get_all('frozen_races')
     else:
@@ -61,8 +65,14 @@ bounds = county_bounds.total_bounds
 lon_center = (bounds[0] + bounds[2]) / 2
 lat_center = (bounds[1] + bounds[3]) / 2
 
-def strip_statute_count(statutes):
+def strip_count(statutes):
     return [x[:x.rfind(" (")] for x in statutes]
+
+def filter_by_list(df, col, vals):
+    if any([x=='ALL' for x in vals]):
+        return df
+    else:
+        return df[df[col].isin(vals)]
 
 with st.sidebar:
     table_type = st.selectbox("Data Type", ['ARRESTS'], help='Currently, only arrests 2022 data is available. More data will be available in the future '+
@@ -75,9 +85,23 @@ with st.sidebar:
                             config.geo_data.keys(),
                             index=[k for k,x in enumerate(config.geo_data.keys()) if x==default_map_type][0])
     
-    df = cache.get_data(table_type, year)
+    df, unique_races = cache.get_data(table_type, year)
 
-    statute_options = cache.get_statute_options(df)
+    ibr_options = cache.get_ibr_options(df)
+    default = []
+    for x in default_ibrs:
+        matches = [y for y in ibr_options if y.startswith(x+' (')]
+        default.extend(matches)
+        
+    ibrs = st.multiselect("IBR Code", ibr_options, default=default, 
+                   help='Type in this box to search for IBR codes. Filtering by IBR code filters the available statutes. '+
+                        "Actual filtering of the data is based on the value in the Statutes box. To show all results for an "+
+                        "IBR code, select All under statutes.")
+    
+    ibrs_list = strip_count(ibrs)
+    df_rem = filter_by_list(df.copy(), 'IBR Full', ibrs_list)
+
+    statute_options = cache.get_statute_options(df_rem)
     default = []
     for x in default_statutes:
         matches = [y for y in statute_options if y.startswith(x+' (')]
@@ -86,13 +110,12 @@ with st.sidebar:
     statutes = st.multiselect("Statutes", statute_options, default=default, 
                    help='Type in this box to search for statutes')
     
-    statutes_list = strip_statute_count(statutes)
+    statutes_list = strip_count(statutes)
+    df_rem = filter_by_list(df_rem, 'Statute Full', statutes_list)
 
-    df_rem = df[df['Statute Full'].isin(statutes_list)]
-
-
-    races = st.multiselect("Race/Ethnicity", unique_races:=df_rem[opd.defs.columns.RE_GROUP_SUBJECT].unique(),
+    races = st.multiselect("Race/Ethnicity", unique_races,
                            default=default_races if default_races else unique_races,
+                           key='race_multi_select',
                            help='More demographics filters (gender, age) can be added')
     
     df_rem = df_rem[df_rem[opd.defs.columns.RE_GROUP_SUBJECT].isin(races)]
@@ -107,9 +130,10 @@ with col1:
     def freeze_click():
         st.session_state['unfreeze_disable'] = False
         st.session_state['frozen_filters'] = {'map_type': map_type, 
-                                            'statutes': statutes, 
-                                            'races': races,
-                                            'df_rem': df_rem.copy()}
+                                              'ibrs': ibrs,
+                                              'statutes': statutes, 
+                                              'races': races,
+                                              'df_rem': df_rem.copy()}
     st.button('Freeze', on_click=freeze_click, help="Click this button to keep the current map and compare to a 2nd map.")
 
 plot_dual = st.session_state['frozen_filters']!=None
@@ -132,12 +156,14 @@ with col4:
         
         st.query_params.clear()
         st.query_params['map_type'] = map_type
+        st.query_params['ibrs'] = ibrs_list
         st.query_params['statutes'] = statutes_list
         st.query_params['races'] = races
 
         if plot_dual:
             st.query_params['frozen_map_type'] = st.session_state['frozen_filters']['map_type']
-            st.query_params['frozen_statutes'] = strip_statute_count(st.session_state['frozen_filters']['statutes'])
+            st.query_params['frozen_ibrs'] = strip_count(st.session_state['frozen_filters']['ibrs'])
+            st.query_params['frozen_statutes'] = strip_count(st.session_state['frozen_filters']['statutes'])
             st.query_params['frozen_races'] = st.session_state['frozen_filters']['races']
 
 
@@ -157,13 +183,20 @@ if plot_dual:
         if st.session_state['frozen_filters']['map_type']!='Individual Locations' and not opacity else opacity
     if 'df_rem' not in st.session_state['frozen_filters']:
         # frozen_filters was populated from command line
+        frozen_ibrs = st.session_state['frozen_filters']['ibrs']
+        st.session_state['frozen_filters']['ibrs'] = []
+        for k, v in enumerate(frozen_ibrs):          
+            v = [x for x in ibr_options if x.startswith(v+' (')][0]
+            st.session_state['frozen_filters']['ibrs'].append(v)
+
         frozen_statutes = st.session_state['frozen_filters']['statutes']
         st.session_state['frozen_filters']['statutes'] = []
         for k, v in enumerate(frozen_statutes):          
             v = [x for x in statute_options if x.startswith(v+' (')][0]
             st.session_state['frozen_filters']['statutes'].append(v)
             
-        st.session_state['frozen_filters']['df_rem'] = df[df['Statute Full'].isin(frozen_statutes)]
+        st.session_state['frozen_filters']['df_rem'] = filter_by_list(df.copy(), 'IBR Full', frozen_ibrs)
+        st.session_state['frozen_filters']['df_rem'] = filter_by_list(st.session_state['frozen_filters']['df_rem'], 'Statute Full', frozen_statutes)
         st.session_state['frozen_filters']['df_rem'] = st.session_state['frozen_filters']['df_rem'][
             st.session_state['frozen_filters']['df_rem'][opd.defs.columns.RE_GROUP_SUBJECT].isin(st.session_state['frozen_filters']['races'])
         ]
@@ -302,6 +335,7 @@ with container:
         col1, col2 = st.columns(2)
         with col1:
             st.info("Left map is filtered for: \n\n"+
+                    f"**IBR Codes**: {', '.join(st.session_state['frozen_filters']['ibrs'])}\n\n"+
                     f"**Statutes**: {', '.join(st.session_state['frozen_filters']['statutes'])}\n\n"+
                     f"**Races**: {', '.join(st.session_state['frozen_filters']['races'])}\n\n")
         with col2:
@@ -311,7 +345,7 @@ with container:
 
 download_container.download_button(
     label='Download Map',
-    data = cache.map_to_html(str(plot_dual), map_type, statutes, races, map_container),
+    data = cache.map_to_html(str(plot_dual), map_type, ibrs, statutes, races, map_container),
     file_name="map_"+datetime.datetime.now().strftime('%Y%m%d_%H%M%S'+".html"),
     help="Download current map as HTML file"
 )

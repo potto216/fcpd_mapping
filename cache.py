@@ -15,11 +15,24 @@ def hash_df(df: gpd.GeoDataFrame):
 @st.cache_data(show_spinner=False, hash_funcs={gpd.GeoDataFrame: hash_df})
 def get_statute_options(df):
     vc = df['Statute Full'].value_counts().to_frame().reset_index()
-    return vc.apply(lambda x: f"{x['Statute Full']} ({x['count']})", axis=1)
+    vc = vc.apply(lambda x: f"{x['Statute Full']} ({x['count']})", axis=1)
+    vc = vc.to_list()
+    options = [f'ALL ({len(df)})']
+    options.extend(vc)
+    return options
+
+@st.cache_data(show_spinner=False, hash_funcs={gpd.GeoDataFrame: hash_df})
+def get_ibr_options(df):
+    vc = df['IBR Full'].value_counts().to_frame().reset_index()
+    vc = vc.apply(lambda x: f"{x['IBR Full']} ({x['count']})", axis=1)
+    vc = vc.to_list()
+    options = [f'ALL ({len(df)})']
+    options.extend(vc)
+    return options
 
 
 @st.cache_data(show_spinner=False)
-def map_to_html(plot_dual, map_type, statutes, races, _m):
+def map_to_html(plot_dual, map_type, ibrs, statutes, races, _m):
     return _m.get_root().render()
 
 
@@ -44,11 +57,12 @@ def get_data(table_type, year):
                                 crs="EPSG:2283").to_crs(epsg=4326)
     
     df['Statute Full'] = df.apply(lambda x: f"{x['Statute']}: {x['Statute Description']}", axis=1)
+    df['IBR Full'] = df.apply(lambda x: f"{x['IBR Code']}: {x['IBR Description']}", axis=1)
 
-    cols_keeps = ['Statute Full', 'geometry', opd.defs.columns.RE_GROUP_SUBJECT]
+    cols_keeps = ['Statute Full', 'IBR Full', 'geometry', opd.defs.columns.RE_GROUP_SUBJECT]
     cols_keeps.extend([x['df_on'] for x in geo_data.values() if 'df_on' in x])
     df = df[cols_keeps]
-    return df
+    return df, df[opd.defs.columns.RE_GROUP_SUBJECT].unique()
 
 
 @st.cache_data(show_spinner="Loading County Boundary")
