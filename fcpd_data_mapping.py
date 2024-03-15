@@ -29,7 +29,7 @@ default_color = 'blue'
 default_group = 'Default Group'
 default_statutes = ['ALL']  #['5/1/2001: DRUNK IN PUBLIC OR PROFANE']
 default_ibrs = ['ALL']
-default_map_type = 'Patrol Area'
+default_map_type = 'Individual Locations'
 default_races = None
 if 'markers' not in st.session_state:
     st.session_state['markers'] = pd.DataFrame(columns=['Name','Latitude','Longitude','Group','Color'])
